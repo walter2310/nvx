@@ -104,8 +104,16 @@ func unzip(src string, dest string) error {
 	if err != nil {
 		return err
 	}
-
 	defer r.Close()
+
+	var totalFiles int
+	for _, f := range r.File {
+		if !f.FileInfo().IsDir() {
+			totalFiles++
+		}
+	}
+
+	bar := progressbar.Default(int64(totalFiles), "Extracting Node.js")
 
 	for _, f := range r.File {
 		fPath := filepath.Join(dest, f.Name)
@@ -133,10 +141,11 @@ func unzip(src string, dest string) error {
 		_, err = io.Copy(outFile, rc)
 		outFile.Close()
 		rc.Close()
-
 		if err != nil {
 			return err
 		}
+
+		bar.Add(1)
 	}
 
 	return nil
