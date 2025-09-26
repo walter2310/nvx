@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
@@ -68,55 +69,60 @@ func useNodeVersion(nodeVersion string) error {
 			return fmt.Errorf("could not find node.exe in version %s", nodeVersion)
 		}
 
-		// Contar archivos para el progress bar
-		var totalFiles int64
-		filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
+		var files []string
+		err = filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return nil
 			}
 			if !info.IsDir() {
-				totalFiles++
+				files = append(files, path)
 			}
 			return nil
 		})
 
-		// Crear progress bar para la copia de archivos
-		bar := progressbar.DefaultBytes(
-			totalFiles,
-			"📦 Setting Node.js files...",
+		if err != nil {
+			return fmt.Errorf("failed to scan files: %v", err)
+		}
+
+		bar := progressbar.NewOptions(len(files),
+			progressbar.OptionSetDescription("📦 Setting Node.js files..."),
+			progressbar.OptionSetWriter(os.Stderr),
+			progressbar.OptionShowCount(),
+			progressbar.OptionShowIts(),
+			progressbar.OptionSetWidth(10),
+			progressbar.OptionThrottle(65*time.Millisecond),
+			progressbar.OptionOnCompletion(func() {
+				fmt.Fprint(os.Stderr, "\n")
+			}),
+			progressbar.OptionSpinnerType(14),
+			progressbar.OptionFullWidth(),
 		)
 
-		// Crear destino en current/bin
 		destDir := filepath.Join(nvxDir, "current", "bin")
 		os.RemoveAll(destDir)
 		os.MkdirAll(destDir, 0755)
 
-		// Copiar todos los archivos de sourceDir a destDir con progress bar
-		err = filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
+		for _, filePath := range files {
+			relPath, err := filepath.Rel(sourceDir, filePath)
 			if err != nil {
-				return err
-			}
-			if info.IsDir() {
-				return nil
+				return fmt.Errorf("failed to get relative path: %v", err)
 			}
 
-			relPath, _ := filepath.Rel(sourceDir, path)
 			dstPath := filepath.Join(destDir, relPath)
 
 			dstDir := filepath.Dir(dstPath)
-			os.MkdirAll(dstDir, 0755)
+			if err := os.MkdirAll(dstDir, 0755); err != nil {
+				return fmt.Errorf("failed to create directory %s: %v", dstDir, err)
+			}
 
-			if err := pkg.CopyFile(path, dstPath); err != nil {
+			if err := pkg.CopyFile(filePath, dstPath); err != nil {
 				return fmt.Errorf("failed to copy %s: %v", relPath, err)
 			}
 
-			// Actualizar progress bar después de cada archivo copiado
-			bar.Add64(1)
-			return nil
-		})
-		if err != nil {
-			return err
+			bar.Add(1)
 		}
+
+		bar.Finish()
 
 		binPath := filepath.Join(nvxDir, "current", "bin")
 		absBinPath, _ := filepath.Abs(binPath)
@@ -126,7 +132,6 @@ func useNodeVersion(nodeVersion string) error {
 		}
 
 	} else {
-		// En Unix/macOS mantenemos symlink
 		if err := os.Symlink(versionDir, currentLink); err != nil {
 			return fmt.Errorf("failed to switch version: %v", err)
 		}

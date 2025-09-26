@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync"
 
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
@@ -90,7 +92,6 @@ func DownloadNodeVersionBinary(dirname string, nodeVersion string, resp *http.Re
 		"Downloading Node.js",
 	)
 
-	// Envolvemos resp.Body con la barra
 	_, err = io.Copy(io.MultiWriter(out, bar), resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to save Node.js: %v", err)
@@ -106,46 +107,75 @@ func unzip(src string, dest string) error {
 	}
 	defer r.Close()
 
-	var totalFiles int
+	var files []*zip.File
 	for _, f := range r.File {
 		if !f.FileInfo().IsDir() {
-			totalFiles++
+			files = append(files, f)
 		}
 	}
 
-	bar := progressbar.Default(int64(totalFiles), "Extracting Node.js")
+	bar := progressbar.Default(int64(len(files)), "Extracting Node.js")
 
-	for _, f := range r.File {
-		fPath := filepath.Join(dest, f.Name)
+	// Pool workers
+	numWorkers := runtime.NumCPU()
+	jobs := make(chan *zip.File, len(files))
+	errs := make(chan error, len(files))
 
-		if f.FileInfo().IsDir() {
-			os.MkdirAll(fPath, os.ModePerm)
-			continue
-		}
+	var wg sync.WaitGroup
 
-		if err := os.MkdirAll(filepath.Dir(fPath), os.ModePerm); err != nil {
-			return err
-		}
+	// Lanzamos los workers
+	for w := 0; w < numWorkers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			buf := make([]byte, 32*1024) // buffer reutilizable por worker
+			for f := range jobs {
+				fPath := filepath.Join(dest, f.Name)
 
-		outFile, err := os.OpenFile(fPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
-		if err != nil {
-			return err
-		}
+				// Crear directorios si hacen falta
+				if err := os.MkdirAll(filepath.Dir(fPath), os.ModePerm); err != nil {
+					errs <- err
+					return
+				}
 
-		rc, err := f.Open()
-		if err != nil {
-			outFile.Close()
-			return err
-		}
+				rc, err := f.Open()
+				if err != nil {
+					errs <- err
+					return
+				}
 
-		_, err = io.Copy(outFile, rc)
-		outFile.Close()
-		rc.Close()
-		if err != nil {
-			return err
-		}
+				outFile, err := os.OpenFile(fPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+				if err != nil {
+					rc.Close()
+					errs <- err
+					return
+				}
 
-		bar.Add(1)
+				_, err = io.CopyBuffer(outFile, rc, buf)
+
+				outFile.Close()
+				rc.Close()
+
+				if err != nil {
+					errs <- err
+					return
+				}
+
+				bar.Add(1)
+			}
+		}()
+	}
+
+	for _, f := range files {
+		jobs <- f
+	}
+	close(jobs)
+
+	wg.Wait()
+	close(errs)
+
+	if len(errs) > 0 {
+		return <-errs
 	}
 
 	return nil
