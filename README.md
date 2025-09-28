@@ -16,7 +16,7 @@ nvx is a fast and lightweight Node.js version manager written in Go. It allows y
 Run this command in PowerShell to install nvx:
 
 ```powershell
-iwr -useb https://raw.githubusercontent.com/walter2310/nvx/main/install.ps1 | iex
+iwr -useb https://raw.githubusercontent.com/walter2310/nvx/main/installer.ps1 | iex
 ```
 This will:
 
@@ -26,6 +26,7 @@ This will:
 - ⚠️ **Restart** your terminal after installation.
 
 ## 🚀 Usage
+
 
 ### Install a specific Node.js version:
 
