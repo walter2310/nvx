@@ -123,16 +123,14 @@ func unzip(src string, dest string) error {
 
 	var wg sync.WaitGroup
 
-	// Lanzamos los workers
 	for w := 0; w < numWorkers; w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			buf := make([]byte, 32*1024) // buffer reutilizable por worker
+			buf := make([]byte, 32*1024)
 			for f := range jobs {
 				fPath := filepath.Join(dest, f.Name)
 
-				// Crear directorios si hacen falta
 				if err := os.MkdirAll(filepath.Dir(fPath), os.ModePerm); err != nil {
 					errs <- err
 					return
