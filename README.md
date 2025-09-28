@@ -1,6 +1,6 @@
 # nvx
 
-nvx is a fast and lightweight Node.js version manager written in Go. It allows you to install, switch, and manage multiple Node.js versions easily on Windows (macOS and Linux soon available).
+nvx is a fast and lightweight Node.js version manager written in Go. It allows you to install, switch, and manage multiple Node.js versions easily on Windows (macOS and Linux coming soon).
 
 ## ✨ Features
 
