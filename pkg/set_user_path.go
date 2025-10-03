@@ -32,7 +32,8 @@ func AddToUserPath(binPath string) error {
 	}
 
 	parts := strings.Split(existing, ";")
-	cleanParts := []string{}
+	cleanParts := make([]string, 0, len(parts))
+	alreadyExists := false
 
 	for _, p := range parts {
 		pTrim := strings.TrimSpace(p)
@@ -42,13 +43,18 @@ func AddToUserPath(binPath string) error {
 
 		pAbs, _ := filepath.Abs(pTrim)
 		pAbs = filepath.Clean(pAbs)
-		cleanParts = append(cleanParts, pTrim)
+
+		if strings.EqualFold(pAbs, binPathClean) {
+			alreadyExists = true
+		}
+		cleanParts = append(cleanParts, pAbs)
 	}
 
-	newPath := binPathClean
-	if len(cleanParts) > 0 {
-		newPath += ";" + strings.Join(cleanParts, ";")
+	if !alreadyExists {
+		cleanParts = append([]string{binPathClean}, cleanParts...)
 	}
+
+	newPath := strings.Join(cleanParts, ";")
 
 	if err := key.SetStringValue("Path", newPath); err != nil {
 		return fmt.Errorf("failed to update PATH: %v", err)
